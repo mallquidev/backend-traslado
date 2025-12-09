@@ -9,10 +9,19 @@ import {
 
 const router = Router();
 
+// Obtener todos los usuarios
 router.get("/", getUsuarios);
+
+// Obtener usuario por ID
 router.get("/:id", getUsuarioById);
+
+// Registrar usuario (sin token porque es dashboard)
+router.post("/", registrarUsuarioCompleto);
+
+// Actualizar usuario
 router.put("/:id", updateUsuario);
+
+// Eliminar usuario
 router.delete("/:id", deleteUsuario);
-router.post("/registrar", registrarUsuarioCompleto);
 
 export default router;

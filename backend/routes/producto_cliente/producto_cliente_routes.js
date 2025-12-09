@@ -1,25 +1,19 @@
-import { Router } from "express";
+import { Router } from 'express';
 import {
-    getProductosCliente,
-    getProductoClienteById,
-    createProductoCliente,
-    updateProductoCliente,
-    deleteProductoCliente
-} from "../../controllers/producto_cliente/producto_cliente_controller.js";
+  createProductoCliente,
+  listProductoClientes,
+  getProductoCliente,
+  updateProductoCliente,
+  deleteProductoCliente
+} from '../../controllers/producto_cliente/producto_cliente_controller.js';
 
 const router = Router();
 
-// GET
-router.get("/", getProductosCliente);
-router.get("/:id", getProductoClienteById);
-
-// POST
-router.post("/", createProductoCliente);
-
-// PUT
-router.put("/:id", updateProductoCliente);
-
-// DELETE
-router.delete("/:id", deleteProductoCliente);
+// Registrar producto
+router.post('/', createProductoCliente);
+router.get('/', listProductoClientes);         // Listar todos
+router.get('/:id', getProductoCliente);        // Obtener por id
+router.put('/:id', updateProductoCliente);     // Actualizar
+router.delete('/:id', deleteProductoCliente);  // Eliminar
 
 export default router;

@@ -1,4 +1,5 @@
 import { pool } from "../../db.js";
+import bcrypt from "bcryptjs";
 
 export const getUsuarios = async (req, res) => {
     try {
@@ -9,26 +10,25 @@ export const getUsuarios = async (req, res) => {
                 u.id_tipo_usuario,
                 tu.nombre AS tipo_usuario,
                 u.estado,
-                ud.nombres,
-                ud.apellidos,
-                ud.dni,
-                ud.celular,
-                ud.direccion
+                u.nombres,
+                u.apellidos,
+                u.dni,
+                u.celular,
+                u.ciudad,
+                u.direccion
             FROM usuario u
-            LEFT JOIN usuario_detalles ud 
-                ON u.id_usuario = ud.id_usuario
-            LEFT JOIN tipo_usuario tu 
-                ON u.id_tipo_usuario = tu.id_tipo_usuario
+            LEFT JOIN tipo_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
         `);
 
-        res.json({
+        return res.json({
             success: true,
-            message: "Usuarios obtenidos correctamente",
-            data: rows
+            message: "Lista de usuarios obtenida",
+            data: rows,
+            errors: []
         });
 
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Error al obtener usuarios",
             data: null,
@@ -36,8 +36,6 @@ export const getUsuarios = async (req, res) => {
         });
     }
 };
-
-
 
 export const getUsuarioById = async (req, res) => {
     try {
@@ -50,36 +48,35 @@ export const getUsuarioById = async (req, res) => {
                 u.id_tipo_usuario,
                 tu.nombre AS tipo_usuario,
                 u.estado,
-                ud.nombres,
-                ud.apellidos,
-                ud.dni,
-                ud.celular,
-                ud.direccion
+                u.nombres,
+                u.apellidos,
+                u.dni,
+                u.celular,
+                u.ciudad,
+                u.direccion
             FROM usuario u
-            LEFT JOIN usuario_detalles ud 
-                ON u.id_usuario = ud.id_usuario
-            LEFT JOIN tipo_usuario tu 
-                ON u.id_tipo_usuario = tu.id_tipo_usuario
+            LEFT JOIN tipo_usuario tu ON u.id_tipo_usuario = tu.id_tipo_usuario
             WHERE u.id_usuario = ?
         `, [id]);
 
         if (rows.length === 0) {
-            return res.json({
+            return res.status(404).json({
                 success: false,
                 message: "Usuario no encontrado",
                 data: null,
-                errors: []
+                errors: ["No existe un usuario con ese ID"]
             });
         }
 
-        res.json({
+        return res.json({
             success: true,
-            message: "Usuario obtenido correctamente",
-            data: rows[0]
+            message: "Usuario encontrado",
+            data: rows[0],
+            errors: []
         });
 
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Error al obtener usuario",
             data: null,
@@ -88,31 +85,83 @@ export const getUsuarioById = async (req, res) => {
     }
 };
 
-
-
 export const updateUsuario = async (req, res) => {
     try {
         const { id } = req.params;
-        const { email, tipo_usuario_id } = req.body;
+        const {
+            id_tipo_usuario,
+            email,
+            nombres,
+            apellidos,
+            dni,
+            celular,
+            ciudad,
+            direccion,
+            estado
+        } = req.body;
 
-        const [result] = await pool.query(
-            `UPDATE usuario SET email = ?, tipo_usuario_id = ? WHERE id_usuario = ?`,
-            [email, tipo_usuario_id, id]
+        // Verificar si existe
+        const [existsUpdate] = await pool.query(
+            "SELECT id_usuario FROM usuario WHERE id_usuario = ?",
+            [id]
         );
 
-        if (result.affectedRows === 0) {
+        if (existsUpdate.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: "Usuario no encontrado",
                 data: null,
-                errors: ["ID no existe"]
+                errors: ["No existe un usuario con ese ID"]
             });
         }
+
+        // Verificar email duplicado
+        if (email) {
+            const [emailCheck] = await pool.query(
+                "SELECT id_usuario FROM usuario WHERE email = ? AND id_usuario <> ?",
+                [email, id]
+            );
+
+            if (emailCheck.length > 0) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Este correo ya está en uso",
+                    data: null,
+                    errors: ["email ya registrado por otro usuario"]
+                });
+            }
+        }
+
+        // Actualizar
+        await pool.query(`
+            UPDATE usuario SET
+                id_tipo_usuario = COALESCE(?, id_tipo_usuario),
+                email = COALESCE(?, email),
+                nombres = COALESCE(?, nombres),
+                apellidos = COALESCE(?, apellidos),
+                dni = COALESCE(?, dni),
+                celular = COALESCE(?, celular),
+                ciudad = COALESCE(?, ciudad),
+                direccion = COALESCE(?, direccion),
+                estado = COALESCE(?, estado)
+            WHERE id_usuario = ?
+        `, [
+            id_tipo_usuario,
+            email,
+            nombres,
+            apellidos,
+            dni,
+            celular,
+            ciudad,
+            direccion,
+            estado,
+            id
+        ]);
 
         return res.json({
             success: true,
             message: "Usuario actualizado correctamente",
-            data: { id, email, tipo_usuario_id },
+            data: { id },
             errors: []
         });
 
@@ -126,24 +175,28 @@ export const updateUsuario = async (req, res) => {
     }
 };
 
-
 export const deleteUsuario = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [result] = await pool.query(
-            `DELETE FROM usuario WHERE id_usuario = ?`,
+        const [exists] = await pool.query(
+            "SELECT id_usuario FROM usuario WHERE id_usuario = ?",
             [id]
         );
 
-        if (result.affectedRows === 0) {
+        if (exists.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: "Usuario no encontrado",
                 data: null,
-                errors: ["ID no existe"]
+                errors: ["No existe un usuario con ese ID"]
             });
         }
+
+        await pool.query(
+            "DELETE FROM usuario WHERE id_usuario = ?",
+            [id]
+        );
 
         return res.json({
             success: true,
@@ -162,72 +215,103 @@ export const deleteUsuario = async (req, res) => {
     }
 };
 
-
-// Registrar usuario con detalles
 export const registrarUsuarioCompleto = async (req, res) => {
-    const { email, password, nombres, apellidos, dni, celular, direccion } = req.body;
-
     try {
-        // Validar campos obligatorios
-        if (!email || !password || !nombres || !apellidos || !dni) {
+        const {
+            id_tipo_usuario,
+            email,
+            password,
+            nombres,
+            apellidos,
+            dni,
+            celular,
+            ciudad,
+            direccion
+        } = req.body;
+
+        // Validación de campos mínimos requeridos
+        if (!email || !password || typeof id_tipo_usuario === "undefined") {
             return res.status(400).json({
                 success: false,
-                message: "Faltan campos obligatorios",
+                message: "Faltan datos obligatorios",
                 data: null,
-                errors: ["email, password, nombres, apellidos y dni son requeridos"]
+                errors: ["email, password e id_tipo_usuario son requeridos"]
             });
         }
 
         // Verificar si el email ya existe
-        const [exists] = await pool.query(
+        const [existsEmail] = await pool.query(
             "SELECT id_usuario FROM usuario WHERE email = ?",
             [email]
         );
 
-        if (exists.length > 0) {
+        if (existsEmail.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: "El correo ya está registrado",
+                message: "Este correo ya está en uso",
                 data: null,
-                errors: ["email duplicado"]
+                errors: ["email ya registrado"]
             });
         }
 
-        // Crear usuario con tipo_usuario = 2 (cliente)
-        const [userResult] = await pool.query(
-            `INSERT INTO usuario (id_tipo_usuario, email, password) VALUES (2, ?, ?)`,
-            [email, password]
-        );
+        // Verificar si el DNI ya existe (si fue enviado)
+        if (dni) {
+            const [existsDni] = await pool.query(
+                "SELECT id_usuario FROM usuario WHERE dni = ?",
+                [dni]
+            );
 
-        const userId = userResult.insertId;
+            if (existsDni.length > 0) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Este DNI ya está registrado",
+                    data: null,
+                    errors: ["dni ya existe en la base de datos"]
+                });
+            }
+        }
 
-        // Crear detalles
-        await pool.query(
-            `INSERT INTO usuario_detalles (id_usuario, nombres, apellidos, dni, celular, direccion)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [userId, nombres, apellidos, dni, celular || null, direccion || null]
-        );
+        // Encriptar contraseña
+        const passwordHash = await bcrypt.hash(password, 10);
 
-        return res.json({
-            success: true,
-            message: "Usuario registrado correctamente",
-            data: {
-                id_usuario: userId,
+        // Registrar usuario
+        const [result] = await pool.query(
+            `INSERT INTO usuario 
+            (id_tipo_usuario, email, password, nombres, apellidos, dni, celular, ciudad, direccion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id_tipo_usuario,
                 email,
-                nombres,
-                apellidos,
-                dni,
-                celular,
-                direccion,
-                tipo_usuario: 2
+                passwordHash,
+                nombres || null,
+                apellidos || null,
+                dni || null,
+                celular || null,
+                ciudad || null,
+                direccion || null
+            ]
+        );
+
+        const newUserId = result.insertId;
+
+        return res.status(201).json({
+            success: true,
+            message: "Usuario registrado exitosamente",
+            data: {
+                usuario: {
+                    id: newUserId,
+                    email,
+                    id_tipo_usuario
+                }
             },
             errors: []
         });
 
     } catch (error) {
+        console.error(error);
         return res.status(500).json({
             success: false,
-            message: "Error al registrar usuario completo",
+            message: "Error en el servidor",
             data: null,
             errors: [error.message]
         });

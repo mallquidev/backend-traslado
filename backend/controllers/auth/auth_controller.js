@@ -4,74 +4,6 @@ import {createAccessToken} from '../../libs/jwt.js'
 import jwt from 'jsonwebtoken'
 import {JWT_KEY} from '../../config.js'
 
-export const register = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: "Faltan datos obligatorios",
-                data: null,
-                errors: ["email y password son requeridos"]
-            });
-        }
-
-        // Verificar si el correo ya existe
-        const [existingUser] = await pool.query(
-            "SELECT id_usuario FROM usuario WHERE email = ?",
-            [email]
-        );
-
-        if (existingUser.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: "El correo ya está en uso",
-                data: null,
-                errors: ["email ya registrado"]
-            });
-        }
-
-        const passwordHash = await bcrypt.hash(password, 10);
-
-        const [result] = await pool.query(`
-            INSERT INTO usuario (email, password)
-            VALUES (?, ?)
-        `, [email, passwordHash]);
-
-        const token = await createAccessToken({ id: result.insertId });
-
-        res.cookie("token", token, {
-            httpOnly: true,
-            sameSite: "none",
-            secure: true
-        });
-
-        return res.json({
-            success: true,
-            message: "Usuario registrado correctamente",
-            data: {
-                token,
-                usuario: {
-                    id: result.insertId,
-                    email
-                }
-            },
-            errors: []
-        });
-
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            success: false,
-            message: "Error en el servidor",
-            data: null,
-            errors: [error.message]
-        });
-    }
-};
-
-
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -101,6 +33,17 @@ export const login = async (req, res) => {
 
         const user = rows[0];
 
+        // RESTRICCIÓN DE ACCESO POR TIPO DE USUARIO
+        if (user.id_tipo_usuario === 1) {
+            return res.status(403).json({
+                success: false,
+                message: "Usted está en la base de datos pero no está autorizado a entrar aquí",
+                data: null,
+                errors: ["Acceso denegado"]
+            });
+        }
+
+        // Validar contraseña
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
@@ -112,6 +55,7 @@ export const login = async (req, res) => {
             });
         }
 
+        // Crear token
         const token = await createAccessToken({ id: user.id_usuario });
 
         res.cookie("token", token, {
@@ -126,7 +70,8 @@ export const login = async (req, res) => {
                 token,
                 usuario: {
                     id: user.id_usuario,
-                    email: user.email
+                    email: user.email,
+                    id_tipo_usuario: user.id_tipo_usuario
                 }
             },
             errors: []
