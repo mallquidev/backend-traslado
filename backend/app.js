@@ -14,6 +14,8 @@ import tarifaRoutes from './routes/tarifa/tarifa_routes.js';
 
 import productoClienteRoutes from './routes/producto_cliente/producto_cliente_routes.js';
 
+import imgWebRoutes from "./routes/img_web/img_web_routes.js";
+
 import swaggerUI from "swagger-ui-express";
 import swaggerDocumentation from "./swagger.json" with {type:'json'};
 
@@ -34,6 +36,8 @@ app.use('/api/tipo_producto', tipoProductoRoutes);
 app.use('/api/tarifa', tarifaRoutes);
 
 app.use('/api/producto_cliente', productoClienteRoutes);
+
+app.use("/api/img_web", imgWebRoutes);
 
 app.use('/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
 

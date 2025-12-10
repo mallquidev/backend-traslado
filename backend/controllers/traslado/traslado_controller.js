@@ -232,3 +232,271 @@ export const registerMassiveTraslado = async (req, res) => {
         conn.release();
     }
 };
+
+export const getEstadisticasEstados = async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT 
+                e.id_estado,
+                e.nombre AS estado,
+                
+                -- Cantidad de traslados
+                COUNT(DISTINCT t.id_traslado) AS total_traslados,
+
+                -- Cantidad de productos dentro de esos traslados
+                COUNT(pc.id_producto) AS total_productos
+
+            FROM estado e
+            LEFT JOIN traslado t ON e.id_estado = t.id_estado
+            LEFT JOIN producto_cliente pc ON t.id_traslado = pc.id_traslado
+            GROUP BY e.id_estado, e.nombre
+            ORDER BY e.id_estado;
+        `);
+
+        res.json({
+            success: true,
+            message: "Estadísticas obtenidas correctamente",
+            data: rows,
+            errors: []
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Error obteniendo estadísticas",
+            data: null,
+            errors: [error.message]
+        });
+    }
+};
+
+// =========================================
+// GET: Filtrar traslados por estado
+// URL: /api/traslado/filtrar?estado=En Camino
+// =========================================
+export const filtrarTraslados = async (req, res) => {
+    try {
+        const { estado, dni, limit } = req.query;
+
+        // --- 1. Traer solo los traslados ---
+        let trasladoQuery = `
+            SELECT t.id_traslado, t.origen, t.destino, t.fecha_registro, e.nombre AS estado,
+                   u.nombres AS cliente_nombres, u.apellidos AS cliente_apellidos,
+                   u.dni AS cliente_dni, u.celular AS cliente_celular,
+                   u.ciudad AS cliente_ciudad, u.direccion AS cliente_direccion,
+                   u.email AS cliente_email
+            FROM traslado t
+            INNER JOIN estado e ON t.id_estado = e.id_estado
+            INNER JOIN usuario u ON t.id_usuario = u.id_usuario
+        `;
+
+        const conditions = [];
+        const params = [];
+
+        // Filtrar por uno o varios estados
+        if (estado) {
+            const estadosArray = estado.split(',').map(s => s.trim());
+            conditions.push(`e.nombre IN (${estadosArray.map(() => '?').join(',')})`);
+            params.push(...estadosArray);
+        }
+
+        // Filtrar por DNI del cliente
+        if (dni) {
+            conditions.push(`u.dni = ?`);
+            params.push(dni);
+        }
+
+        if (conditions.length > 0) {
+            trasladoQuery += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        trasladoQuery += ' ORDER BY t.fecha_registro DESC';
+
+        if (limit) {
+            trasladoQuery += ' LIMIT ?';
+            params.push(Number(limit));
+        }
+
+        const [traslados] = await pool.query(trasladoQuery, params);
+
+        if (traslados.length === 0) {
+            return res.json({
+                success: true,
+                message: "No se encontraron traslados",
+                data: []
+            });
+        }
+
+        // --- 2. Traer productos e imágenes de esos traslados ---
+        const trasladoIds = traslados.map(t => t.id_traslado);
+        const [productos] = await pool.query(`
+            SELECT pc.id_producto, pc.id_traslado, pc.nombre, pc.descripcion,
+                   tp.nombre AS tipo_producto, ta.nombre AS tarifa,
+                   pc.peso, pc.alto, pc.ancho, pc.largo, pc.cantidad,
+                   pc.precio_unitario,
+                   (pc.cantidad * pc.precio_unitario) AS subtotal,
+                   img.url_img AS imagen_url
+            FROM producto_cliente pc
+            INNER JOIN tipo_producto tp ON pc.id_tipo_producto = tp.id_tipo_producto
+            INNER JOIN tarifa ta ON pc.id_tarifa = ta.id_tarifa
+            LEFT JOIN img_producto img ON img.id_producto = pc.id_producto
+            WHERE pc.id_traslado IN (?)
+        `, [trasladoIds]);
+
+        // --- 3. Reconstruir formato JSON ---
+        const trasladosMap = {};
+        traslados.forEach(row => {
+            trasladosMap[row.id_traslado] = {
+                idTraslado: row.id_traslado,
+                origen: row.origen,
+                destino: row.destino,
+                fechaRegistro: row.fecha_registro,
+                estado: row.estado,
+                cliente: {
+                    nombres: row.cliente_nombres,
+                    apellidos: row.cliente_apellidos,
+                    dni: row.cliente_dni,
+                    celular: row.cliente_celular,
+                    ciudad: row.cliente_ciudad,
+                    direccion: row.cliente_direccion,
+                    email: row.cliente_email
+                },
+                items: [],
+                cantidadTotalProductos: 0,
+                totalCosto: 0
+            };
+        });
+
+        productos.forEach(row => {
+            const traslado = trasladosMap[row.id_traslado];
+
+            let item = traslado.items.find(it => it.id === row.id_producto);
+            if (!item) {
+                item = {
+                    id: row.id_producto,
+                    nombre: row.nombre,
+                    descripcion: row.descripcion,
+                    tipoProducto: row.tipo_producto,
+                    tarifa: row.tarifa,
+                    peso: row.peso,
+                    alto: row.alto,
+                    ancho: row.ancho,
+                    largo: row.largo,
+                    cantidad: row.cantidad,
+                    precioUnitario: Number(row.precio_unitario),
+                    subtotal: Number(row.subtotal),
+                    imageUrls: []
+                };
+                traslado.items.push(item);
+                traslado.cantidadTotalProductos += row.cantidad;
+                traslado.totalCosto += Number(row.subtotal);
+            }
+
+            if (row.imagen_url) {
+                item.imageUrls.push(row.imagen_url);
+            }
+        });
+
+        return res.json({
+            success: true,
+            message: "Traslados obtenidos correctamente",
+            data: Object.values(trasladosMap)
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: "Error obteniendo traslados",
+            data: null,
+            errors: [error.message]
+        });
+    }
+};
+
+
+export const actualizarEstadoTraslado = async (req, res) => {
+    try {
+        const { id } = req.params; // id del traslado
+        const { nuevoEstado } = req.body; // nombre del nuevo estado
+
+        if (!nuevoEstado) {
+            return res.status(400).json({
+                success: false,
+                message: "Debes enviar el nuevo estado",
+                data: null
+            });
+        }
+
+        // Verificar si el traslado existe
+        const [trasladoRows] = await pool.query(
+            `SELECT t.id_traslado, t.id_usuario, t.fecha_registro
+             FROM traslado t
+             WHERE t.id_traslado = ?`,
+            [id]
+        );
+
+        if (trasladoRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Traslado no encontrado",
+                data: null
+            });
+        }
+
+        const traslado = trasladoRows[0];
+
+        // Obtener el id del nuevo estado
+        const [estadoRows] = await pool.query(
+            `SELECT id_estado FROM estado WHERE nombre = ?`,
+            [nuevoEstado]
+        );
+
+        if (estadoRows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Estado no válido",
+                data: null
+            });
+        }
+
+        const idNuevoEstado = estadoRows[0].id_estado;
+
+        // Actualizar el estado del traslado
+        await pool.query(
+            `UPDATE traslado SET id_estado = ? WHERE id_traslado = ?`,
+            [idNuevoEstado, id]
+        );
+
+        // Obtener datos del cliente
+        const [clienteRows] = await pool.query(
+            `SELECT nombres, apellidos, dni, celular, ciudad, direccion, email
+             FROM usuario
+             WHERE id_usuario = ?`,
+            [traslado.id_usuario]
+        );
+
+        const cliente = clienteRows[0];
+
+        return res.json({
+            success: true,
+            message: `Estado del traslado actualizado a '${nuevoEstado}'`,
+            data: {
+                idTraslado: traslado.id_traslado,
+                fechaRegistro: traslado.fecha_registro,
+                cliente
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: "Error al actualizar estado del traslado",
+            data: null,
+            errors: [error.message]
+        });
+    }
+};
+
