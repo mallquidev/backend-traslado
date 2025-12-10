@@ -1,282 +1,234 @@
-// controllers/traslado/traslado_controller.js
-import { pool } from "../../db.js";
+import { pool } from '../../db.js'
 
-// Crear traslado (acepta fecha_registro enviada por el front)
-export const createTraslado = async (req, res) => {
-  try {
-    const {
-      id_usuario,
-      id_trabajador,
-      origen,
-      destino,
-      fecha_registro,
-      fecha_programada
-    } = req.body;
+export const registerMassiveTraslado = async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
 
-    // Validaciones
-    let errors = [];
-    if (!id_usuario) errors.push("El campo 'id_usuario' es obligatorio");
-    if (!id_trabajador) errors.push("El campo 'id_trabajador' es obligatorio");
-    if (!origen) errors.push("El campo 'origen' es obligatorio");
-    if (!destino) errors.push("El campo 'destino' es obligatorio");
-    if (!fecha_programada) errors.push("El campo 'fecha_programada' es obligatorio");
+        const { origen, destino, fechaRegistro, estado, cliente, items } = req.body;
 
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Faltan datos obligatorios",
-        data: null,
-        errors
-      });
+        if (!origen || !destino || !cliente || !items || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Faltan datos obligatorios",
+                data: null,
+                errors: ["origen, destino, cliente, estado y items son requeridos"]
+            });
+        }
+
+        // 1️⃣ Formatear fecha
+        const fechaRegistroFormatted = fechaRegistro
+            ? new Date(fechaRegistro).toISOString().slice(0, 19).replace('T', ' ')
+            : new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+        // 2️⃣ Buscar estado
+        if (!estado) {
+            throw new Error("Debes enviar el estado del traslado.");
+        }
+
+        let [estadoRow] = await conn.query(
+            "SELECT id_estado FROM estado WHERE nombre = ?",
+            [estado]
+        );
+
+        let estadoId;
+
+        if (estadoRow.length > 0) {
+            // Estado existe
+            estadoId = estadoRow[0].id_estado;
+        } else {
+            // Estado NO existe → crearlo
+            const [newEstado] = await conn.query(
+                "INSERT INTO estado (nombre) VALUES (?)",
+                [estado]
+            );
+            estadoId = newEstado.insertId;
+        }
+
+        // 3️⃣ Buscar cliente por DNI o email
+        const [existingUser] = await conn.query(
+            "SELECT id_usuario, id_tipo_usuario FROM usuario WHERE dni = ? OR email = ?",
+            [cliente.dni, cliente.email]
+        );
+
+        let clienteId;
+        let tipoUsuarioFinal;
+
+        if (existingUser.length > 0) {
+            clienteId = existingUser[0].id_usuario;
+            tipoUsuarioFinal = existingUser[0].id_tipo_usuario;
+        } else {
+            // Crear tipo_usuario CLIENTE si no existe
+            let [tipoCliente] = await conn.query(
+                "SELECT id_tipo_usuario FROM tipo_usuario WHERE nombre = 'cliente'"
+            );
+            let idClienteTipo;
+
+            if (tipoCliente.length > 0) {
+                idClienteTipo = tipoCliente[0].id_tipo_usuario;
+            } else {
+                const [newTipo] = await conn.query(
+                    "INSERT INTO tipo_usuario (nombre) VALUES ('cliente')"
+                );
+                idClienteTipo = newTipo.insertId;
+            }
+
+            // Registrar nuevo cliente
+            const [newUser] = await conn.query(
+                `INSERT INTO usuario (
+                    id_tipo_usuario, nombres, apellidos, dni, celular, ciudad, direccion, email
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    idClienteTipo,
+                    cliente.nombres,
+                    cliente.apellidos,
+                    cliente.dni,
+                    cliente.celular,
+                    cliente.ciudad,
+                    cliente.direccion,
+                    cliente.email
+                ]
+            );
+
+            clienteId = newUser.insertId;
+            tipoUsuarioFinal = idClienteTipo;
+        }
+
+        // 4️⃣ Crear traslado con estado dinámico
+        const [trasladoResult] = await conn.query(
+            `INSERT INTO traslado (id_usuario, origen, destino, fecha_registro, id_estado)
+             VALUES (?, ?, ?, ?, ?)`,
+            [clienteId, origen, destino, fechaRegistroFormatted, estadoId]
+        );
+
+        const trasladoId = trasladoResult.insertId;
+
+        let totalTraslado = 0;
+        const productosRegistrados = [];
+
+        // 5️⃣ Registrar items
+        for (const item of items) {
+
+            let [tipoProducto] = await conn.query(
+                "SELECT id_tipo_producto FROM tipo_producto WHERE nombre = ?",
+                [item.tipoProducto]
+            );
+
+            let tipoProductoId;
+
+            if (tipoProducto.length > 0) {
+                tipoProductoId = tipoProducto[0].id_tipo_producto;
+            } else {
+                const [newTipo] = await conn.query(
+                    "INSERT INTO tipo_producto (nombre, descripcion) VALUES (?, ?)",
+                    [item.tipoProducto, item.descripcion || ""]
+                );
+                tipoProductoId = newTipo.insertId;
+            }
+
+            // Tarifa
+            const [tarifa] = await conn.query(
+                "SELECT * FROM tarifa WHERE nombre = ?",
+                [item.tarifa]
+            );
+
+            if (tarifa.length === 0) {
+                throw new Error(`La tarifa '${item.tarifa}' no existe`);
+            }
+
+            const tarifaId = tarifa[0].id_tarifa;
+
+            // Calcular precio
+            const peso = Number(item.peso) || 0;
+            const alto = Number(item.alto) || 0;
+            const ancho = Number(item.ancho) || 0;
+            const largo = Number(item.largo) || 0;
+
+            const precioBase = Number(tarifa[0].precio_base) || 0;
+            const precioPorKg = Number(tarifa[0].precio_por_kg) || 0;
+            const precioPorM3 = Number(tarifa[0].precio_por_m3) || 0;
+
+            let precioUnitario = precioBase +
+                (precioPorKg * peso) +
+                (precioPorM3 * (alto * ancho * largo / 1000000));
+
+            precioUnitario = parseFloat(precioUnitario.toFixed(2));
+
+            const [productoResult] = await conn.query(
+                `INSERT INTO producto_cliente 
+                (id_traslado, id_usuario, nombre, descripcion, peso, alto, ancho, largo, cantidad, id_tipo_producto, id_tarifa, precio_unitario)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    trasladoId, clienteId,
+                    item.nombre, item.descripcion,
+                    item.peso, item.alto, item.ancho, item.largo,
+                    item.cantidad || 1,
+                    tipoProductoId, tarifaId,
+                    precioUnitario
+                ]
+            );
+
+            const productoId = productoResult.insertId;
+
+            if (item.imageUrls && item.imageUrls.length > 0) {
+                for (const url of item.imageUrls) {
+                    await conn.query(
+                        "INSERT INTO img_producto (id_producto, url_img) VALUES (?, ?)",
+                        [productoId, url]
+                    );
+                }
+            }
+
+            const subtotal = parseFloat((precioUnitario * (item.cantidad || 1)).toFixed(2));
+            totalTraslado += subtotal;
+
+            productosRegistrados.push({
+                id_producto: productoId,
+                nombre: item.nombre,
+                tipoProducto: item.tipoProducto,
+                tarifa: item.tarifa,
+                precioUnitario,
+                cantidad: item.cantidad || 1,
+                subtotal,
+                imageUrls: item.imageUrls || []
+            });
+        }
+
+        // 6️⃣ Actualizar total
+        await conn.query(
+            "UPDATE traslado SET precio_total = ? WHERE id_traslado = ?",
+            [parseFloat(totalTraslado.toFixed(2)), trasladoId]
+        );
+
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: "Traslado registrado exitosamente",
+            data: {
+                id_traslado: trasladoId,
+                estado: estado,
+                cliente: {
+                    id_usuario: clienteId,
+                    tipo_usuario: tipoUsuarioFinal,
+                    ...cliente
+                },
+                total: parseFloat(totalTraslado.toFixed(2)),
+                productos: productosRegistrados
+            },
+            errors: []
+        });
+
+    } catch (error) {
+        await conn.rollback();
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Error registrando traslado",
+            data: null,
+            errors: [error.message]
+        });
+    } finally {
+        conn.release();
     }
-
-    // Estado inicial (Pendiente)
-    const id_estado = 1;
-
-    const fechaRegistroValue = fecha_registro ? fecha_registro : null;
-
-    let result;
-    if (fechaRegistroValue) {
-      [result] = await pool.query(
-        `INSERT INTO traslado (
-          id_usuario,
-          id_trabajador,
-          origen,
-          destino,
-          fecha_registro,
-          fecha_programada,
-          precio_total,
-          id_estado
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-        [id_usuario, id_trabajador, origen, destino, fechaRegistroValue, fecha_programada, id_estado]
-      );
-    } else {
-      // Usar NOW() si no viene fecha_registro
-      [result] = await pool.query(
-        `INSERT INTO traslado (
-          id_usuario,
-          id_trabajador,
-          origen,
-          destino,
-          fecha_registro,
-          fecha_programada,
-          precio_total,
-          id_estado
-        ) VALUES (?, ?, ?, ?, NOW(), ?, 0, ?)`,
-        [id_usuario, id_trabajador, origen, destino, fecha_programada, id_estado]
-      );
-    }
-
-    const id_traslado = result.insertId;
-
-    const [rows] = await pool.query(
-    `SELECT 
-         t.*,
-         u.nombres AS cliente_nombres,
-         u.apellidos AS cliente_apellidos,
-         e.nombre AS estado_nombre
-       FROM traslado t
-       LEFT JOIN usuario u ON u.id_usuario = t.id_usuario
-       LEFT JOIN estado e ON t.id_estado = e.id_estado
-       WHERE t.id_traslado = ?`,
-      [id_traslado]
-    );
-
-
-    return res.status(201).json({
-      success: true,
-      message: "Traslado creado correctamente",
-      data: rows[0],
-      errors: []
-    });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      data: null,
-      errors: [error.message]
-    });
-  }
-};
-
-// Listar todos los traslados
-export const listTraslados = async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        t.*,
-        u.nombres AS cliente,
-        u.apellidos AS cliente_apellidos,
-        e.nombre AS estado_nombre
-      FROM traslado t
-      LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
-      LEFT JOIN estado e ON t.id_estado = e.id_estado
-      ORDER BY t.id_traslado DESC
-    `);
-
-    return res.json({
-      success: true,
-      message: "Lista de traslados",
-      data: rows,
-      errors: []
-    });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      data: null,
-      errors: [error.message]
-    });
-  }
-};
-
-// Obtener traslado por id
-export const getTraslado = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [rows] = await pool.query(
-      `SELECT t.*, u.nombres AS cliente_nombres, u.apellidos AS cliente_apellidos, e.nombre AS estado_nombre
-       FROM traslado t
-       LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
-       LEFT JOIN estado e ON t.id_estado = e.id_estado
-       WHERE t.id_traslado = ?`,
-      [id]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Traslado no encontrado",
-        data: null,
-        errors: ["No existe un traslado con ese ID"]
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Traslado obtenido",
-      data: rows[0],
-      errors: []
-    });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      data: null,
-      errors: [error.message]
-    });
-  }
-};
-
-// Actualizar traslado (incluye fecha_registro por si es necesario)
-export const updateTraslado = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      id_usuario,
-      id_trabajador,
-      origen,
-      destino,
-      fecha_registro,
-      fecha_programada,
-      id_estado
-    } = req.body;
-
-    const [result] = await pool.query(
-      `UPDATE traslado SET
-        id_usuario = ?,
-        id_trabajador = ?,
-        origen = ?,
-        destino = ?,
-        fecha_registro = ?,
-        fecha_programada = ?,
-        id_estado = ?
-      WHERE id_traslado = ?`,
-      [
-        id_usuario,
-        id_trabajador,
-        origen,
-        destino,
-        fecha_registro || null,
-        fecha_programada,
-        id_estado,
-        id
-      ]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Traslado no encontrado",
-        data: null,
-        errors: ["No existe un traslado con ese ID"]
-      });
-    }
-
-    const [updated] = await pool.query(
-      `SELECT * FROM traslado WHERE id_traslado = ?`,
-      [id]
-    );
-
-    return res.json({
-      success: true,
-      message: "Traslado actualizado",
-      data: updated[0],
-      errors: []
-    });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      data: null,
-      errors: [error.message]
-    });
-  }
-};
-
-
-// Eliminar traslado
-export const deleteTraslado = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const [result] = await pool.query(
-      `DELETE FROM traslado WHERE id_traslado = ?`,
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Traslado no encontrado",
-        data: null,
-        errors: ["No existe un traslado con ese ID"]
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Traslado eliminado",
-      data: { id: Number(id) },
-      errors: []
-    });
-
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Error en el servidor",
-      data: null,
-      errors: [error.message]
-    });
-  }
 };

@@ -505,7 +505,7 @@
         }
       }
     },
-    "/api/traslado/": {
+    "/api/traslado/register-massive": {
       "post": {
         "description": "",
         "parameters": [
@@ -515,22 +515,22 @@
             "schema": {
               "type": "object",
               "properties": {
-                "id_usuario": {
-                  "example": "any"
-                },
-                "id_trabajador": {
-                  "example": "any"
-                },
                 "origen": {
                   "example": "any"
                 },
                 "destino": {
                   "example": "any"
                 },
-                "fecha_registro": {
+                "fechaRegistro": {
                   "example": "any"
                 },
-                "fecha_programada": {
+                "estado": {
+                  "example": "any"
+                },
+                "cliente": {
+                  "example": "any"
+                },
+                "items": {
                   "example": "any"
                 }
               }
@@ -538,120 +538,11 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "Created"
+          "200": {
+            "description": "OK"
           },
           "400": {
             "description": "Bad Request"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        }
-      },
-      "get": {
-        "description": "",
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        }
-      }
-    },
-    "/api/traslado/{id}": {
-      "get": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "404": {
-            "description": "Not Found"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        }
-      },
-      "put": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "body",
-            "in": "body",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "id_usuario": {
-                  "example": "any"
-                },
-                "id_trabajador": {
-                  "example": "any"
-                },
-                "origen": {
-                  "example": "any"
-                },
-                "destino": {
-                  "example": "any"
-                },
-                "fecha_registro": {
-                  "example": "any"
-                },
-                "fecha_programada": {
-                  "example": "any"
-                },
-                "id_estado": {
-                  "example": "any"
-                }
-              }
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "404": {
-            "description": "Not Found"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        }
-      },
-      "delete": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "404": {
-            "description": "Not Found"
           },
           "500": {
             "description": "Internal Server Error"

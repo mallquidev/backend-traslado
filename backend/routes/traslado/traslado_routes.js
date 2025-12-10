@@ -1,19 +1,8 @@
-// routes/traslado/traslado_routes.js
-import { Router } from "express";
-import {
-  createTraslado,
-  listTraslados,
-  getTraslado,
-  updateTraslado,
-  deleteTraslado
-} from "../../controllers/traslado/traslado_controller.js";
+import { Router } from 'express'
+import { registerMassiveTraslado } from '../../controllers/traslado/traslado_controller.js'
 
-const router = Router();
+const router = Router()
 
-router.post("/", createTraslado);
-router.get("/", listTraslados);
-router.get("/:id", getTraslado);
-router.put("/:id", updateTraslado);
-router.delete("/:id", deleteTraslado);
+router.post('/register-massive', registerMassiveTraslado)
 
-export default router;
+export default router
