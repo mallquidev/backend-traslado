@@ -3,23 +3,15 @@ import { pool } from "../../db.js";
 // Crear imagen
 export const crearImagenWeb = async (req, res) => {
   try {
-    console.log("REQ FILE:", JSON.stringify(req.file, null, 2));
-    console.log("REQ BODY:", JSON.stringify(req.body, null, 2));
+    const { nombre, url } = req.body;
 
-    if (!req.file) {
-      console.log("No hay archivo en req.file");
+    if (!nombre || !url) {
       return res.status(400).json({
         success: false,
-        message: "No se ha subido ninguna imagen",
+        message: "Debes enviar nombre y url de la imagen",
         data: null
       });
     }
-
-    const { originalname } = req.file;
-    const nombre = req.body.nombre || originalname;
-    const url = req.file?.path || req.file?.filename || req.file?.secure_url;
-
-    console.log("URL final:", url);
 
     const [result] = await pool.query(
       "INSERT INTO img_web (nombre, url) VALUES (?, ?)",
@@ -28,7 +20,7 @@ export const crearImagenWeb = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Imagen subida correctamente",
+      message: "Imagen registrada correctamente",
       data: {
         id: result.insertId,
         nombre,
@@ -37,12 +29,12 @@ export const crearImagenWeb = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ERROR REAL:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error("ERROR REAL:", error);
     return res.status(500).json({
       success: false,
-      message: "Error al subir la imagen",
+      message: "Error al registrar la imagen",
       data: null,
-      errors: [error.message, error.stack]
+      errors: [error.message]
     });
   }
 };
@@ -50,21 +42,16 @@ export const crearImagenWeb = async (req, res) => {
 // Actualizar imagen
 export const actualizarImagenWeb = async (req, res) => {
   try {
-    console.log("REQ FILE:", JSON.stringify(req.file, null, 2));
-    console.log("REQ BODY:", JSON.stringify(req.body, null, 2));
-
     const { id } = req.params;
+    const { nombre, url } = req.body;
 
-    if (!req.file) {
+    if (!nombre || !url) {
       return res.status(400).json({
         success: false,
-        message: "No se ha subido ninguna imagen",
+        message: "Debes enviar nombre y url de la imagen",
         data: null
       });
     }
-
-    const nombre = req.body.nombre || "imagen_actualizada";
-    const url = req.file?.path || req.file?.filename || req.file?.secure_url;
 
     const [result] = await pool.query(
       "UPDATE img_web SET nombre = ?, url = ? WHERE id_img_web = ?",
@@ -90,12 +77,12 @@ export const actualizarImagenWeb = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ERROR REAL:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error("ERROR REAL:", error);
     return res.status(500).json({
       success: false,
       message: "Error al actualizar la imagen",
       data: null,
-      errors: [error.message, error.stack]
+      errors: [error.message]
     });
   }
 };
@@ -104,20 +91,22 @@ export const actualizarImagenWeb = async (req, res) => {
 export const obtenerImagenesWeb = async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM img_web ORDER BY id_img_web DESC"
+      "SELECT id_img_web AS id, nombre, url FROM img_web ORDER BY id_img_web DESC"
     );
+
     return res.json({
       success: true,
       message: "Imágenes obtenidas correctamente",
       data: rows
     });
+
   } catch (error) {
-    console.error("ERROR REAL:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error("ERROR REAL:", error);
     return res.status(500).json({
       success: false,
       message: "Error al obtener imágenes",
       data: null,
-      errors: [error.message, error.stack]
+      errors: [error.message]
     });
   }
 };
@@ -126,8 +115,17 @@ export const obtenerImagenesWeb = async (req, res) => {
 export const obtenerImagenWebPorId = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Debes enviar el ID de la imagen",
+        data: null
+      });
+    }
+
     const [rows] = await pool.query(
-      "SELECT * FROM img_web WHERE id_img_web = ?",
+      "SELECT id_img_web AS id, nombre, url FROM img_web WHERE id_img_web = ?",
       [id]
     );
 
@@ -144,13 +142,14 @@ export const obtenerImagenWebPorId = async (req, res) => {
       message: "Imagen obtenida correctamente",
       data: rows[0]
     });
+
   } catch (error) {
-    console.error("ERROR REAL:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error("ERROR REAL:", error);
     return res.status(500).json({
       success: false,
       message: "Error al obtener la imagen",
       data: null,
-      errors: [error.message, error.stack]
+      errors: [error.message]
     });
   }
 };
