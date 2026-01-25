@@ -8,7 +8,7 @@ const doc = {
         title: 'API DE PRUEBA',
         description: 'esta api es descripcion'
     },
-    host: 'localhost:3000',
+    host: 'localhost:4000',
     schemes: ['http']
 }
 

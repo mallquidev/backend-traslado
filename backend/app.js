@@ -18,6 +18,7 @@ import imgWebRoutes from "./routes/img_web/img_web_routes.js";
 
 import swaggerUI from "swagger-ui-express";
 import swaggerDocumentation from "./swagger.json" with {type:'json'};
+import test from "./routes/test/test_routes.js";
 
 const app = express()
 app.use(cors())
@@ -40,5 +41,6 @@ app.use('/api/producto_cliente', productoClienteRoutes);
 app.use("/api/img_web", imgWebRoutes);
 
 app.use('/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
+app.use('/api/hola', test)
 
 export default app;
