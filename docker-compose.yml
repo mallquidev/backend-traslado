@@ -1,27 +1,26 @@
-name: Deploy Backend + MySQL
+version: "3.9"
 
-on:
-  push:
-    branches:
-      - main
+services:
+  backend:
+    build: .
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+    restart: always
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: admin123
+      MYSQL_DATABASE: mudanza
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: always
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.8.1
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Deploy to VPS with docker-compose
-        run: |
-          ssh -o StrictHostKeyChecking=no mortydev@198.100.155.243 "
-            cd /home/mortydev/backend-traslado
-            docker-compose pull
-            docker-compose up -d --build
-          "
+volumes:
+  mysql_data:
