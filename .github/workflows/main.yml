@@ -22,6 +22,5 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no mortydev@198.100.155.243 "
             cd /home/mortydev/backend-traslado
-            docker-compose pull
             docker-compose up -d --build
           "
