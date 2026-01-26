@@ -3,8 +3,14 @@ version: "3.9"
 services:
   backend:
     build: .
-    ports:
-      - "4000:4000"
+    container_name: backend
+    restart: unless-stopped
     env_file:
       - .env
-    restart: always
+    networks:
+      - app-network
+    # NO exponer puerto 4000 al público, Nginx hará el proxy
+
+networks:
+  app-network:
+    external: true
