@@ -9,7 +9,7 @@ services:
       - .env
     networks:
       - app-network
-    # NO exponer puerto 4000 al público, Nginx hará el proxy
+    # No exponer puerto 4000 al público, Nginx hará el proxy
 
 networks:
   app-network:
