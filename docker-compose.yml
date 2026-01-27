@@ -9,7 +9,8 @@ services:
       - .env
     networks:
       - app-network
-    # No exponer puerto 4000 al público, Nginx hará el proxy
+    ports:
+      - "127.0.0.1:4000:4000"  # Exponer solo a localhost, seguro
 
 networks:
   app-network:

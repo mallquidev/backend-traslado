@@ -21,10 +21,10 @@ jobs:
       - name: Deploy to VPS with docker-compose
         run: |
           ssh -o StrictHostKeyChecking=no mortydev@198.100.155.243 "
-          cd /home/mortydev/backend-traslado
-          git reset --hard origin/main
-          git pull origin main
-          docker-compose down
-          docker-compose up -d --build
-        "
-
+            cd /home/mortydev/backend-traslado || exit
+            git reset --hard           # 🔹 descarta cualquier cambio local
+            git pull origin main       # 🔹 trae los cambios del repo
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
+          "
