@@ -10,24 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️Trae el código del repo
+      # 1️⃣ Trae el código del repo
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2️Configura SSH para conectarse a tu VPS
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.8.2
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      # 3️Despliega en la VPS
+      # 2️⃣ Despliega en la VPS vía SSH
       - name: Deploy to VPS with docker-compose
-        run: |
-          ssh -o StrictHostKeyChecking=no mortydev@198.100.155.243 "
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: 158.69.192.184           # tu VPS
+          username: mortydev             # usuario en VPS
+          key: ${{ secrets.VPS_SSH_KEY }} # la misma llave que frontend
+          port: 22
+          script: |
             cd /home/mortydev/backend-traslado || exit
-            git reset --hard              # descarta cualquier cambio local
-            git pull origin main          # trae los últimos cambios
+            git reset --hard
+            git pull origin main
             docker compose down
             docker compose build --no-cache
             docker compose up -d
-          "
