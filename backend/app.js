@@ -41,7 +41,7 @@ app.use('/producto_cliente', productoClienteRoutes);
 
 app.use("/img_web", imgWebRoutes);
 
-app.use('/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
+app.use('/api/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
 app.use('/hola', test)
 
 export default app;
