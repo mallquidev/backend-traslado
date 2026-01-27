@@ -14,11 +14,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2️⃣ Desplegar en la VPS usando SSH (igual que frontend)
+      # 2️⃣ Desplegar en la VPS usando SSH
       - name: Deploy to VPS
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.VPS_SSH_KEY_BACKEND }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 158.69.192.184 >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/id_ed25519 mortydev@158.69.192.184 "
