@@ -1,3 +1,3 @@
 export const testController = (req, res) => {
-  res.send("Hola maldito");
+  res.send("Hola XD");
 };
