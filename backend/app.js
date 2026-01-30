@@ -28,20 +28,20 @@ app.use(cookieParser())
 
 
 app.use('/api',authRoutes)
-app.use('/tipo_usuario', tipoUsuarioRoutes)
-app.use('/usuario', usuarioRoutes);
-app.use('/estado', estadoRoutes);
-app.use('/traslado', trasladoRoutes);
-app.use("/img_producto", imgProductoRoutes);
+app.use('/api/tipo_usuario', tipoUsuarioRoutes)
+app.use('/api/usuario', usuarioRoutes);
+app.use('/api/estado', estadoRoutes);
+app.use('/api/traslado', trasladoRoutes);
+app.use("/api/img_producto", imgProductoRoutes);
 
-app.use('/tipo_producto', tipoProductoRoutes);
-app.use('/tarifa', tarifaRoutes);
+app.use('/api/tipo_producto', tipoProductoRoutes);
+app.use('/api/tarifa', tarifaRoutes);
 
-app.use('/producto_cliente', productoClienteRoutes);
+app.use('/api/producto_cliente', productoClienteRoutes);
 
-app.use("/img_web", imgWebRoutes);
+app.use("/api/img_web", imgWebRoutes);
 
 app.use('/api/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
-app.use('/hola', test)
+app.use('/api/hola', test)
 
 export default app;
