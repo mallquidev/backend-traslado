@@ -1,8 +1,12 @@
-import {config} from 'dotenv'
+import { config } from 'dotenv'
+import path from 'path'
 
-config()
-export const PORT = process.env.PORT || 3000
-//DATABASE
+// Esto fuerza a dotenv a leer el .env que está en la carpeta padre
+config({ path: path.resolve('../.env') })
+
+export const PORT = process.env.PORT || 4000
+
+// DATABASE
 export const DB_HOST = process.env.DB_HOST
 export const DB_PORT = process.env.DB_PORT
 export const DB_USER = process.env.DB_USER
