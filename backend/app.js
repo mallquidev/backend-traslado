@@ -19,6 +19,7 @@ import imgWebRoutes from "./routes/img_web/img_web_routes.js";
 import swaggerUI from "swagger-ui-express";
 import swaggerDocumentation from "./swagger.json" with {type:'json'};
 import test from "./routes/test/test_routes.js";
+import ruta_empresa from './routes/ruta_empresa/ruta_empresa_routes.js'
 
 const app = express()
 app.set('trust proxy', true)
@@ -43,5 +44,6 @@ app.use("/api/img_web", imgWebRoutes);
 
 app.use('/api/doc', swaggerUI.serve, swaggerUI.setup(swaggerDocumentation));
 app.use('/api/hola', test)
+app.use('/api/ruta', ruta_empresa)
 
 export default app;

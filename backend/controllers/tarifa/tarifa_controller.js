@@ -1,4 +1,3 @@
-// controllers/producto/tarifa_controller.js
 import { pool } from '../../db.js';
 
 // Crear tarifa
@@ -11,6 +10,7 @@ export const createTarifa = async (req, res) => {
       precio_por_m3,
       recargo_fragil,
       recargo_especial,
+      precio_por_km,
       descripcion
     } = req.body;
 
@@ -25,8 +25,8 @@ export const createTarifa = async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO tarifa 
-        (nombre, precio_base, precio_por_kg, precio_por_m3, recargo_fragil, recargo_especial, descripcion)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (nombre, precio_base, precio_por_kg, precio_por_m3, recargo_fragil, recargo_especial, precio_por_km, descripcion)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         nombre,
         precio_base || 0,
@@ -34,6 +34,7 @@ export const createTarifa = async (req, res) => {
         precio_por_m3 || 0,
         recargo_fragil || 0,
         recargo_especial || 0,
+        precio_por_km || 0,
         descripcion || null
       ]
     );
@@ -93,6 +94,7 @@ export const updateTarifa = async (req, res) => {
       precio_por_m3,
       recargo_fragil,
       recargo_especial,
+      precio_por_km,
       descripcion
     } = req.body;
 
@@ -104,6 +106,7 @@ export const updateTarifa = async (req, res) => {
         precio_por_m3 = ?,
         recargo_fragil = ?,
         recargo_especial = ?,
+        precio_por_km = ?,
         descripcion = ?
       WHERE id_tarifa = ?`,
       [
@@ -113,6 +116,7 @@ export const updateTarifa = async (req, res) => {
         precio_por_m3 || 0,
         recargo_fragil || 0,
         recargo_especial || 0,
+        precio_por_km || 0,
         descripcion || null,
         id
       ]

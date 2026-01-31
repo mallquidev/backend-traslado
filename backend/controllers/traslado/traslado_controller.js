@@ -279,13 +279,22 @@ export const filtrarTraslados = async (req, res) => {
     try {
         const { estado, dni, limit } = req.query;
 
-        // --- 1. Traer solo los traslados ---
+        // 1. Traer traslados (YA con precio_total)
         let trasladoQuery = `
-            SELECT t.id_traslado, t.origen, t.destino, t.fecha_registro, e.nombre AS estado,
-                   u.nombres AS cliente_nombres, u.apellidos AS cliente_apellidos,
-                   u.dni AS cliente_dni, u.celular AS cliente_celular,
-                   u.ciudad AS cliente_ciudad, u.direccion AS cliente_direccion,
-                   u.email AS cliente_email
+            SELECT 
+                t.id_traslado,
+                t.origen,
+                t.destino,
+                t.fecha_registro,
+                t.precio_total,
+                e.nombre AS estado,
+                u.nombres AS cliente_nombres,
+                u.apellidos AS cliente_apellidos,
+                u.dni AS cliente_dni,
+                u.celular AS cliente_celular,
+                u.ciudad AS cliente_ciudad,
+                u.direccion AS cliente_direccion,
+                u.email AS cliente_email
             FROM traslado t
             INNER JOIN estado e ON t.id_estado = e.id_estado
             INNER JOIN usuario u ON t.id_usuario = u.id_usuario
@@ -294,14 +303,12 @@ export const filtrarTraslados = async (req, res) => {
         const conditions = [];
         const params = [];
 
-        // Filtrar por uno o varios estados
         if (estado) {
             const estadosArray = estado.split(',').map(s => s.trim());
             conditions.push(`e.nombre IN (${estadosArray.map(() => '?').join(',')})`);
             params.push(...estadosArray);
         }
 
-        // Filtrar por DNI del cliente
         if (dni) {
             conditions.push(`u.dni = ?`);
             params.push(dni);
@@ -328,24 +335,35 @@ export const filtrarTraslados = async (req, res) => {
             });
         }
 
-        // --- 2. Traer productos e imágenes de esos traslados ---
+        // 2. Traer productos (LEFT JOINs)
         const trasladoIds = traslados.map(t => t.id_traslado);
+
         const [productos] = await pool.query(`
-            SELECT pc.id_producto, pc.id_traslado, pc.nombre, pc.descripcion,
-                   tp.nombre AS tipo_producto, ta.nombre AS tarifa,
-                   pc.peso, pc.alto, pc.ancho, pc.largo, pc.cantidad,
-                   pc.precio_unitario,
-                   (pc.cantidad * pc.precio_unitario) AS subtotal,
-                   img.url_img AS imagen_url
+            SELECT 
+                pc.id_producto,
+                pc.id_traslado,
+                pc.nombre,
+                pc.descripcion,
+                tp.nombre AS tipo_producto,
+                ta.nombre AS tarifa,
+                pc.peso,
+                pc.alto,
+                pc.ancho,
+                pc.largo,
+                pc.cantidad,
+                pc.precio_unitario,
+                (pc.cantidad * pc.precio_unitario) AS subtotal,
+                img.url_img AS imagen_url
             FROM producto_cliente pc
-            INNER JOIN tipo_producto tp ON pc.id_tipo_producto = tp.id_tipo_producto
-            INNER JOIN tarifa ta ON pc.id_tarifa = ta.id_tarifa
+            LEFT JOIN tipo_producto tp ON pc.id_tipo_producto = tp.id_tipo_producto
+            LEFT JOIN tarifa ta ON pc.id_tarifa = ta.id_tarifa
             LEFT JOIN img_producto img ON img.id_producto = pc.id_producto
             WHERE pc.id_traslado IN (?)
         `, [trasladoIds]);
 
-        // --- 3. Reconstruir formato JSON ---
+        // 3. Construir mapa base
         const trasladosMap = {};
+
         traslados.forEach(row => {
             trasladosMap[row.id_traslado] = {
                 idTraslado: row.id_traslado,
@@ -364,14 +382,17 @@ export const filtrarTraslados = async (req, res) => {
                 },
                 items: [],
                 cantidadTotalProductos: 0,
-                totalCosto: 0
+                totalCosto: Number(row.precio_total)
             };
         });
 
+        // 4. Agregar productos
         productos.forEach(row => {
             const traslado = trasladosMap[row.id_traslado];
+            if (!traslado || !row.id_producto) return;
 
             let item = traslado.items.find(it => it.id === row.id_producto);
+
             if (!item) {
                 item = {
                     id: row.id_producto,
@@ -388,9 +409,9 @@ export const filtrarTraslados = async (req, res) => {
                     subtotal: Number(row.subtotal),
                     imageUrls: []
                 };
+
                 traslado.items.push(item);
                 traslado.cantidadTotalProductos += row.cantidad;
-                traslado.totalCosto += Number(row.subtotal);
             }
 
             if (row.imagen_url) {
@@ -414,6 +435,7 @@ export const filtrarTraslados = async (req, res) => {
         });
     }
 };
+
 
 
 export const actualizarEstadoTraslado = async (req, res) => {
@@ -497,6 +519,210 @@ export const actualizarEstadoTraslado = async (req, res) => {
             data: null,
             errors: [error.message]
         });
+    }
+};
+
+
+export const registerMassiveTrasladoWithKm = async (req, res) => {
+    const conn = await pool.getConnection();
+
+    try {
+        await conn.beginTransaction();
+
+        const { origen, destino, fechaRegistro, estado, cliente, items } = req.body;
+
+        if (!origen || !destino || !cliente || !items || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Faltan datos obligatorios",
+                data: null,
+                errors: ["origen, destino, cliente e items son requeridos"]
+            });
+        }
+
+        // 1️⃣ Buscar ruta
+        const [rutaRows] = await conn.query(
+            `SELECT distancia_km 
+             FROM ruta_empresa 
+             WHERE origen = ? AND destino = ? AND estado = 1`,
+            [origen, destino]
+        );
+
+        if (rutaRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: `No existe ruta disponible entre ${origen} y ${destino}`,
+                data: null,
+                errors: []
+            });
+        }
+
+
+        const distanciaKm = Number(rutaRows[0].distancia_km);
+
+        // 2️⃣ Fecha
+        const fechaRegistroFormatted = fechaRegistro
+            ? new Date(fechaRegistro).toISOString().slice(0, 19).replace('T', ' ')
+            : new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+        // 3️⃣ Estado
+        const [estadoRow] = await conn.query(
+            "SELECT id_estado FROM estado WHERE nombre = ?",
+            [estado]
+        );
+
+        const estadoId = estadoRow.length
+            ? estadoRow[0].id_estado
+            : (await conn.query(
+                "INSERT INTO estado (nombre) VALUES (?)",
+                [estado]
+            ))[0].insertId;
+
+        // 4️⃣ Cliente
+        const [existingUser] = await conn.query(
+            "SELECT id_usuario, id_tipo_usuario FROM usuario WHERE dni = ? OR email = ?",
+            [cliente.dni, cliente.email]
+        );
+
+        let clienteId;
+        let tipoUsuarioFinal;
+
+        if (existingUser.length) {
+            clienteId = existingUser[0].id_usuario;
+            tipoUsuarioFinal = existingUser[0].id_tipo_usuario;
+        } else {
+            let [tipoCliente] = await conn.query(
+                "SELECT id_tipo_usuario FROM tipo_usuario WHERE nombre = 'cliente'"
+            );
+
+            const tipoClienteId = tipoCliente.length
+                ? tipoCliente[0].id_tipo_usuario
+                : (await conn.query(
+                    "INSERT INTO tipo_usuario (nombre) VALUES ('cliente')"
+                ))[0].insertId;
+
+            const [newUser] = await conn.query(
+                `INSERT INTO usuario
+                (id_tipo_usuario, nombres, apellidos, dni, celular, ciudad, direccion, email)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    tipoClienteId,
+                    cliente.nombres,
+                    cliente.apellidos,
+                    cliente.dni,
+                    cliente.celular,
+                    cliente.ciudad,
+                    cliente.direccion,
+                    cliente.email
+                ]
+            );
+
+            clienteId = newUser.insertId;
+            tipoUsuarioFinal = tipoClienteId;
+        }
+
+        // 5️⃣ Crear traslado
+        const [trasladoResult] = await conn.query(
+            `INSERT INTO traslado (id_usuario, origen, destino, fecha_registro, id_estado)
+             VALUES (?, ?, ?, ?, ?)`,
+            [clienteId, origen, destino, fechaRegistroFormatted, estadoId]
+        );
+
+        const trasladoId = trasladoResult.insertId;
+
+        let totalTraslado = 0;
+        const productosRegistrados = [];
+
+        // 6️⃣ Items
+        for (const item of items) {
+
+            const [[tarifa]] = await conn.query(
+                "SELECT * FROM tarifa WHERE nombre = ?",
+                [item.tarifa]
+            );
+
+            if (!tarifa) {
+                throw new Error(`La tarifa '${item.tarifa}' no existe`);
+            }
+
+            const peso = Number(item.peso) || 0;
+            const volumen = (item.alto * item.ancho * item.largo) / 1000000;
+
+            let precioUnitario =
+                Number(tarifa.precio_base) +
+                (Number(tarifa.precio_por_kg) * peso) +
+                (Number(tarifa.precio_por_m3) * volumen) +
+                (Number(tarifa.precio_por_km) * distanciaKm);
+
+            precioUnitario = parseFloat(precioUnitario.toFixed(2));
+
+            const [productoResult] = await conn.query(
+                `INSERT INTO producto_cliente
+                (id_traslado, id_usuario, nombre, descripcion, peso, alto, ancho, largo,
+                 cantidad, id_tarifa, precio_unitario)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    trasladoId, clienteId,
+                    item.nombre, item.descripcion,
+                    item.peso, item.alto, item.ancho, item.largo,
+                    item.cantidad || 1,
+                    tarifa.id_tarifa,
+                    precioUnitario
+                ]
+            );
+
+            const subtotal = precioUnitario * (item.cantidad || 1);
+            totalTraslado += subtotal;
+
+            productosRegistrados.push({
+                id_producto: productoResult.insertId,
+                nombre: item.nombre,
+                tipoProducto: item.tipoProducto,
+                tarifa: item.tarifa,
+                precioUnitario,
+                cantidad: item.cantidad || 1,
+                subtotal: parseFloat(subtotal.toFixed(2)),
+                imageUrls: item.imageUrls || []
+            });
+        }
+
+        // 7️⃣ Total
+        await conn.query(
+            "UPDATE traslado SET precio_total = ? WHERE id_traslado = ?",
+            [parseFloat(totalTraslado.toFixed(2)), trasladoId]
+        );
+
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: "Traslado registrado exitosamente",
+            data: {
+                id_traslado: trasladoId,
+                origen,
+                destino,
+                estado,
+                cliente: {
+                    id_usuario: clienteId,
+                    tipo_usuario: tipoUsuarioFinal,
+                    ...cliente
+                },
+                total: parseFloat(totalTraslado.toFixed(2)),
+                productos: productosRegistrados
+            },
+            errors: []
+        });
+
+    } catch (error) {
+        await conn.rollback();
+        res.status(500).json({
+            success: false,
+            message: "Error registrando traslado con ruta",
+            data: null,
+            errors: [error.message]
+        });
+    } finally {
+        conn.release();
     }
 };
 
